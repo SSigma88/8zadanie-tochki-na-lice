@@ -1,67 +1,90 @@
 <!DOCTYPE html>
 <html>
-  <head>
+<head>
+    <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Импорт библиотек через CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-face-three.prod.js"></script>
-    <script type="importmap">
-    {
-      "imports": {
-        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-      }
-    }
-    </script>
+    <title>Face Mesh 468 Dots</title>
     <style>
-      body { margin: 0; overflow: hidden; }
-      #container { width: 100vw; height: 100vh; }
-    </style>
-  </head>
-  <body>
-    <div id="container"></div>
-
-    <script type="module">
-      import * as THREE from 'three';
-      import { MindARThree } from 'mindar-face-three';
-
-      const mindarThree = new MindARThree({
-        container: document.querySelector("#container"),
-      });
-
-      const {renderer, scene, camera} = mindarThree;
-
-      // Создаем якорь для лица (Face Mesh)
-      const anchor = mindarThree.addAnchor(1);
-
-      // Геометрия и материал для синих сфер
-      const sphereGeometry = new THREE.SphereGeometry(0.008, 8, 8);
-      const sphereMaterial = new THREE.MeshBasicMaterial({color: 0x0000ff});
-
-      const spheres = [];
-      // Создаем 468 сфер (согласно количеству точек в MediaPipe Face Mesh)
-      for (let i = 0; i < 468; i++) {
-        const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-        spheres.push(sphere);
-        anchor.group.add(sphere);
-      }
-
-      // Обновляем позиции сфер на каждом кадре
-      mindarThree.addFaceMeshUpdateCallback((faceMesh) => {
-        for (let i = 0; i < 468; i++) {
-          const point = faceMesh.keypoints[i];
-          // Устанавливаем координаты сферы согласно координатам точки лица
-          spheres[i].position.set(point.x, point.y, point.z);
+        body { margin: 0; overflow: hidden; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        #videoElement { display: none; }
+        #outputCanvas {
+            max-width: 100%;
+            max-height: 100%;
+            transform: scaleX(-1); /* Зеркальное отображение для удобства */
         }
-      });
+    </style>
+</head>
+<body>
+    <video id="videoElement" autoplay muted playsinline></video>
+    <canvas id="outputCanvas"></canvas>
 
-      const start = async() => {
-        await mindarThree.start();
-        renderer.setAnimationLoop(() => {
-          renderer.render(scene, camera);
+    <!-- Используем более стабильные версии скриптов -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+
+    <script>
+        const videoElement = document.getElementById('videoElement');
+        const canvasElement = document.getElementById('outputCanvas');
+        const canvasCtx = canvasElement.getContext('2d');
+
+        const faceMesh = new FaceMesh({
+            locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+            }
         });
-      }
-      
-      start();
+
+        faceMesh.setOptions({
+            maxNumFaces: 1,
+            refineLandmarks: true, // Включает дополнительные точки вокруг глаз и губ (итого 478)
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        faceMesh.onResults(onResults);
+
+        function onResults(results) {
+            // Устанавливаем размеры холста под видеопоток
+            if (canvasElement.width !== results.image.width) {
+                canvasElement.width = results.image.width;
+                canvasElement.height = results.image.height;
+            }
+
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            
+            // Рисуем кадр видео
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.multiFaceLandmarks) {
+                for (const landmarks of results.multiFaceLandmarks) {
+                    // Рисуем каждую из 468+ точек
+                    for (let i = 0; i < landmarks.length; i++) {
+                        const x = landmarks[i].x * canvasElement.width;
+                        const y = landmarks[i].y * canvasElement.height;
+                        
+                        canvasCtx.beginPath();
+                        canvasCtx.arc(x, y, 1.5, 0, 2 * Math.PI);
+                        canvasCtx.fillStyle = '#00BFFF'; // Глубокий небесно-синий
+                        canvasCtx.fill();
+                        
+                        // Небольшой эффект свечения (опционально)
+                        canvasCtx.shadowBlur = 2;
+                        canvasCtx.shadowColor = '#00BFFF';
+                    }
+                }
+            }
+            canvasCtx.restore();
+        }
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await faceMesh.send({image: videoElement});
+            },
+            width: 1280,
+            height: 720
+        });
+        
+        camera.start();
     </script>
-  </body>
+</body>
 </html>
